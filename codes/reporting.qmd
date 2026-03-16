@@ -1,7 +1,9 @@
 ---
 title: "Simulation study"
 author: "Maciej Beręsewicz"
-format: html
+format:
+  html:
+    embed-resources: true
 ---
 
 ```{r setup, include=FALSE}
@@ -31,6 +33,14 @@ results_cont <- results[target %in% c("y11", "y12")]
 results_bin  <- results[target %in% c("y21", "y22")]
 summary_cont <- summary_dt[target %in% c("y11", "y12")]
 summary_bin  <- summary_dt[target %in% c("y21", "y22")]
+
+## shared theme and palette
+theme_sim <- theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+palette_sim <- scale_fill_brewer(palette = "Set2")
+
+## figures directory
+dir.create("../results/figures", showWarnings = FALSE, recursive = TRUE)
 ```
 
 ## Bias
@@ -38,25 +48,27 @@ summary_bin  <- summary_dt[target %in% c("y21", "y22")]
 ### Continuous outcomes (y11, y12)
 
 ```{r bias-cont, fig.width=10, fig.height=6}
-ggplot(results_cont, aes(x = basis, y = bias, fill = estimator)) +
+p <- ggplot(results_cont, aes(x = basis, y = bias, fill = estimator)) +
   geom_boxplot(outlier.size = 0.5) +
   geom_hline(yintercept = 0, linetype = "dashed") +
   facet_grid(dataset ~ target, scales = "free_y") +
-  theme_minimal() +
-  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  theme_sim + palette_sim +
   labs(x = "Basis", y = "Bias", fill = "Estimator")
+p
+ggsave("../results/figures/bias-cont.png", p, width = 10, height = 6, dpi = 300)
 ```
 
 ### Binary outcomes (y21, y22)
 
 ```{r bias-bin, fig.width=10, fig.height=6}
-ggplot(results_bin, aes(x = basis, y = bias, fill = estimator)) +
+p <- ggplot(results_bin, aes(x = basis, y = bias, fill = estimator)) +
   geom_boxplot(outlier.size = 0.5) +
   geom_hline(yintercept = 0, linetype = "dashed") +
   facet_grid(dataset ~ target, scales = "free_y") +
-  theme_minimal() +
-  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  theme_sim + palette_sim +
   labs(x = "Basis", y = "Bias", fill = "Estimator")
+p
+ggsave("../results/figures/bias-bin.png", p, width = 10, height = 6, dpi = 300)
 ```
 
 ## RMSE
@@ -64,23 +76,25 @@ ggplot(results_bin, aes(x = basis, y = bias, fill = estimator)) +
 ### Continuous outcomes (y11, y12)
 
 ```{r rmse-cont, fig.width=10, fig.height=6}
-ggplot(summary_cont, aes(x = basis, y = rmse, fill = estimator)) +
+p <- ggplot(summary_cont, aes(x = basis, y = rmse, fill = estimator)) +
   geom_col(position = position_dodge()) +
   facet_grid(dataset ~ target, scales = "free_y") +
-  theme_minimal() +
-  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  theme_sim + palette_sim +
   labs(x = "Basis", y = "RMSE", fill = "Estimator")
+p
+ggsave("../results/figures/rmse-cont.png", p, width = 10, height = 6, dpi = 300)
 ```
 
 ### Binary outcomes (y21, y22)
 
 ```{r rmse-bin, fig.width=10, fig.height=6}
-ggplot(summary_bin, aes(x = basis, y = rmse, fill = estimator)) +
+p <- ggplot(summary_bin, aes(x = basis, y = rmse, fill = estimator)) +
   geom_col(position = position_dodge()) +
   facet_grid(dataset ~ target, scales = "free_y") +
-  theme_minimal() +
-  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  theme_sim + palette_sim +
   labs(x = "Basis", y = "RMSE", fill = "Estimator")
+p
+ggsave("../results/figures/rmse-bin.png", p, width = 10, height = 6, dpi = 300)
 ```
 
 ## CI Coverage
@@ -88,23 +102,25 @@ ggplot(summary_bin, aes(x = basis, y = rmse, fill = estimator)) +
 ### Continuous outcomes (y11, y12)
 
 ```{r coverage-cont, fig.width=10, fig.height=6}
-ggplot(summary_cont, aes(x = basis, y = coverage, fill = estimator)) +
+p <- ggplot(summary_cont, aes(x = basis, y = coverage, fill = estimator)) +
   geom_col(position = position_dodge()) +
   geom_hline(yintercept = 0.95, linetype = "dashed") +
   facet_grid(dataset ~ target) +
-  theme_minimal() +
-  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  theme_sim + palette_sim +
   labs(x = "Basis", y = "Coverage", fill = "Estimator")
+p
+ggsave("../results/figures/coverage-cont.png", p, width = 10, height = 6, dpi = 300)
 ```
 
 ### Binary outcomes (y21, y22)
 
 ```{r coverage-bin, fig.width=10, fig.height=6}
-ggplot(summary_bin, aes(x = basis, y = coverage, fill = estimator)) +
+p <- ggplot(summary_bin, aes(x = basis, y = coverage, fill = estimator)) +
   geom_col(position = position_dodge()) +
   geom_hline(yintercept = 0.95, linetype = "dashed") +
   facet_grid(dataset ~ target) +
-  theme_minimal() +
-  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  theme_sim + palette_sim +
   labs(x = "Basis", y = "Coverage", fill = "Estimator")
+p
+ggsave("../results/figures/coverage-bin.png", p, width = 10, height = 6, dpi = 300)
 ```
