@@ -8,6 +8,9 @@ library(doRNG)
 
 source("codes/functions.R")
 
+sims <- 1000
+cores <- 8
+
 set.seed(2026)
 N <- 20000
 n <- 1000
@@ -79,8 +82,6 @@ configs <- list(
 )
 
 a <- Sys.time()
-sims <- 10
-cores <- 8
 cl <- makeCluster(cores)
 registerDoSNOW(cl)
 pb <- progress_bar$new(format = "[:bar] :percent [Elapsed: :elapsedfull || Remaining: :eta]",
