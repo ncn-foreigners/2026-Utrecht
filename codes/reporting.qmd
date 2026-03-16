@@ -4,3 +4,107 @@ author: "Maciej Beręsewicz"
 format: html
 ---
 
+```{r setup, include=FALSE}
+library(data.table)
+library(ggplot2)
+
+results <- readRDS("../results/sim-results.rds")
+setDT(results)
+
+true_values <- data.table(
+  target = c("y11", "y12", "y21", "y22"),
+  true_mean = c(2.992724, 2.57075, 0.89095, 0.7515)
+)
+
+results <- merge(results, true_values, by = "target")
+results[, bias := mean - true_mean]
+results[, covered := as.numeric(lower_bound <= true_mean & true_mean <= upper_bound)]
+
+## summary statistics
+summary_dt <- results[, .(
+  mean_bias = mean(bias),
+  rmse = sqrt(mean(bias^2)),
+  coverage = mean(covered)
+), by = .(target, estimator, dataset, basis)]
+
+results_cont <- results[target %in% c("y11", "y12")]
+results_bin  <- results[target %in% c("y21", "y22")]
+summary_cont <- summary_dt[target %in% c("y11", "y12")]
+summary_bin  <- summary_dt[target %in% c("y21", "y22")]
+```
+
+## Bias
+
+### Continuous outcomes (y11, y12)
+
+```{r bias-cont, fig.width=10, fig.height=6}
+ggplot(results_cont, aes(x = basis, y = bias, fill = estimator)) +
+  geom_boxplot(outlier.size = 0.5) +
+  geom_hline(yintercept = 0, linetype = "dashed") +
+  facet_grid(dataset ~ target, scales = "free_y") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  labs(x = "Basis", y = "Bias", fill = "Estimator")
+```
+
+### Binary outcomes (y21, y22)
+
+```{r bias-bin, fig.width=10, fig.height=6}
+ggplot(results_bin, aes(x = basis, y = bias, fill = estimator)) +
+  geom_boxplot(outlier.size = 0.5) +
+  geom_hline(yintercept = 0, linetype = "dashed") +
+  facet_grid(dataset ~ target, scales = "free_y") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  labs(x = "Basis", y = "Bias", fill = "Estimator")
+```
+
+## RMSE
+
+### Continuous outcomes (y11, y12)
+
+```{r rmse-cont, fig.width=10, fig.height=6}
+ggplot(summary_cont, aes(x = basis, y = rmse, fill = estimator)) +
+  geom_col(position = position_dodge()) +
+  facet_grid(dataset ~ target, scales = "free_y") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  labs(x = "Basis", y = "RMSE", fill = "Estimator")
+```
+
+### Binary outcomes (y21, y22)
+
+```{r rmse-bin, fig.width=10, fig.height=6}
+ggplot(summary_bin, aes(x = basis, y = rmse, fill = estimator)) +
+  geom_col(position = position_dodge()) +
+  facet_grid(dataset ~ target, scales = "free_y") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  labs(x = "Basis", y = "RMSE", fill = "Estimator")
+```
+
+## CI Coverage
+
+### Continuous outcomes (y11, y12)
+
+```{r coverage-cont, fig.width=10, fig.height=6}
+ggplot(summary_cont, aes(x = basis, y = coverage, fill = estimator)) +
+  geom_col(position = position_dodge()) +
+  geom_hline(yintercept = 0.95, linetype = "dashed") +
+  facet_grid(dataset ~ target) +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  labs(x = "Basis", y = "Coverage", fill = "Estimator")
+```
+
+### Binary outcomes (y21, y22)
+
+```{r coverage-bin, fig.width=10, fig.height=6}
+ggplot(summary_bin, aes(x = basis, y = coverage, fill = estimator)) +
+  geom_col(position = position_dodge()) +
+  geom_hline(yintercept = 0.95, linetype = "dashed") +
+  facet_grid(dataset ~ target) +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  labs(x = "Basis", y = "Coverage", fill = "Estimator")
+```
