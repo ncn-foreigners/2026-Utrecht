@@ -1,0 +1,6 @@
+---
+title: "Simulation study"
+author: "Maciej Beręsewicz"
+format: html
+---
+
