@@ -4,6 +4,7 @@ library(nonprobsvy)
 library(doSNOW)
 library(progress)
 library(foreach)
+library(doRNG)
 
 source("codes/functions.R")
 
@@ -77,7 +78,6 @@ configs <- list(
   list(basis = "main+deciles",   ipw = "ipw_d2", lin = "lin_d2", bin = "bin_d2")
 )
 
-set.seed(2026)
 a <- Sys.time()
 sims <- 10
 cores <- 8
@@ -92,7 +92,7 @@ results_simulation <- foreach(k = 1:sims,
                               .packages = c("survey", "nonprobsvy", "data.table"),
                               .options.snow = opts,
                               .errorhandling = "remove"
-) %dopar% {
+) %dorng% {
 
   ## draw samples
   sample_prob <- pop_data[sample(1:N, n), ]
