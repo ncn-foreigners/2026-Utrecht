@@ -1,8 +1,19 @@
-set.seed(2026)
+library(survey)
+library(data.table)
+library(nonprobsvy)
+library(doSNOW)
+library(progress)
+library(foreach)
+library(doRNG)
 
+source("codes/functions.R")
+
+sims <- 1000
+cores <- 8
+
+set.seed(2026)
 N <- 20000
 n <- 1000
-
 x1 <- rnorm(N, 1, 1)
 x2 <- rexp(N, 1)
 alp <- rnorm(N)
@@ -10,182 +21,201 @@ epsilon <- rnorm(N)
 p_quantiles1 <- seq(0.25, 0.75, 0.25)
 p_quantiles2 <- seq(0.10, 0.90, 0.10)
 
-
-# ============================================================
-# NEW ADDITIONS
-# designed to create situations where quantile balancing
-# / quantile calibration / quantile-based nuisance models
-# should have an advantage over purely smooth global models
-# ============================================================
-
-# ------------------------------------------------------------
-# 1. POPULATION QUANTILES OF X1 AND X2
-# Added because quantile-based methods should use cutpoints
-# anchored to the target population (or probability sample),
-# not the nonprobability sample.
-# ------------------------------------------------------------
-qx1_10_90 <- quantile(x1, probs = c(0.10, 0.90))
+## helper variables for threshold/rank effects
 qx1_20_80 <- quantile(x1, probs = c(0.20, 0.80))
-qx2_10_90 <- quantile(x2, probs = c(0.10, 0.90))
 qx2_20_80 <- quantile(x2, probs = c(0.20, 0.80))
-qx2_deciles <- quantile(x2, probs = seq(0.10, 0.90, 0.10))
-
-# Optional helper variables for threshold/rank-type effects
-x1_low20  <- as.numeric(x1 <= qx1_20_80[1])
-x1_high80 <- as.numeric(x1 >  qx1_20_80[2])
-x2_low20  <- as.numeric(x2 <= qx2_20_80[1])
-x2_high80 <- as.numeric(x2 >  qx2_20_80[2])
-
-# Middle region indicator for x2
+x1_low20    <- as.numeric(x1 <= qx1_20_80[1])
+x1_high80   <- as.numeric(x1 >  qx1_20_80[2])
+x2_low20    <- as.numeric(x2 <= qx2_20_80[1])
+x2_high80   <- as.numeric(x2 >  qx2_20_80[2])
 x2_mid40_60 <- as.numeric(x2 > quantile(x2, 0.40) & x2 <= quantile(x2, 0.60))
-
-
-# ------------------------------------------------------------
-# 2. NEW OUTCOME MODELS WITH THRESHOLD / PIECEWISE STRUCTURE
-# Added because quantile-based methods should perform well
-# when E(Y|X) depends on tail membership or threshold effects
-# rather than only on smooth global polynomials.
-# ------------------------------------------------------------
-
-# Continuous outcome with threshold effect in upper tail of x2
-# and lower tail of x1
-y13 <- 1 + 0.5 * x1 + x2 + 2.0 * x2_high80 - 1.0 * x1_low20 + alp + epsilon
-
-# Continuous outcome depending on rank-like oscillation in x2.
-# First map x2 to its empirical population CDF rank.
 Fx2 <- rank(x2, ties.method = "average") / N
-y14 <- 1 + 0.5 * x1 + sin(2 * pi * Fx2) + alp + epsilon
 
-# Binary outcome with threshold structure
-y23 <- rbinom(
-  N, 1,
-  plogis(-1 + 0.5 * x1 + 0.5 * x2 + 2.0 * x2_high80 - 1.0 * x1_low20 + alp)
+## outcomes — threshold and rank-based
+y11 <- 1 + 0.5 * x1 + x2 + 2.0 * x2_high80 - 1.0 * x1_low20 + alp + epsilon
+y12 <- 1 + 0.5 * x1 + sin(2 * pi * Fx2) + alp + epsilon
+y21 <- rbinom(N, 1, plogis(-1 + 0.5 * x1 + 0.5 * x2 + 2.0 * x2_high80 - 1.0 * x1_low20 + alp))
+y22 <- rbinom(N, 1, plogis(-0.5 + 0.5 * x1 + 1.2 * sin(2 * pi * Fx2) + alp))
+
+## selection mechanisms
+p1 <- plogis(-2 + 2.5 * x2_high80 + 1.5 * x1_low20)
+p2 <- plogis(1.5 - 3.0 * x2_mid40_60)
+
+pop_data <- data.frame(x1, x2, y11, y12, y21, y22, p1, p2, w = N / n)
+
+control_ipw <- control_sel(est_method = "gee",
+                           nleqslv_method = "Newton",
+                           nleqslv_global = "qline")
+
+formulas <- list(
+  y = ~ y11 + y12 + y21 + y22,
+
+  lin = y11 + y12 ~ x1 + x2,
+  bin = y21 + y22 ~ x1 + x2,
+  ipw = ~ x1 + x2,
+
+  ipw_q1 = ~ x1_0.25 + x1_0.5 + x1_0.75 + x2_0.25 + x2_0.5 + x2_0.75,
+  ipw_q2 = ~ x1 + x2 + x1_0.25 + x1_0.5 + x1_0.75 + x2_0.25 + x2_0.5 + x2_0.75,
+  lin_q1 = y11 + y12 ~ x1_0.25 + x1_0.5 + x1_0.75 + x2_0.25 + x2_0.5 + x2_0.75,
+  bin_q1 = y21 + y22 ~ x1_0.25 + x1_0.5 + x1_0.75 + x2_0.25 + x2_0.5 + x2_0.75,
+  lin_q2 = y11 + y12 ~ x1 + x2 + x1_0.25 + x1_0.5 + x1_0.75 + x2_0.25 + x2_0.5 + x2_0.75,
+  bin_q2 = y21 + y22 ~ x1 + x2 + x1_0.25 + x1_0.5 + x1_0.75 + x2_0.25 + x2_0.5 + x2_0.75,
+
+  ipw_d1 = ~ x1_0.1 + x1_0.2 + x1_0.3 + x1_0.4 + x1_0.5 + x1_0.6 +
+    x1_0.7 + x1_0.8 + x1_0.9 + x2_0.1 + x2_0.2 + x2_0.3 + x2_0.4 +
+    x2_0.5 + x2_0.6 + x2_0.7 + x2_0.8 + x2_0.9,
+  ipw_d2 = ~ x1 + x2 + x1_0.1 + x1_0.2 + x1_0.3 + x1_0.4 + x1_0.5 + x1_0.6 +
+    x1_0.7 + x1_0.8 + x1_0.9 + x2_0.1 + x2_0.2 + x2_0.3 + x2_0.4 +
+    x2_0.5 + x2_0.6 + x2_0.7 + x2_0.8 + x2_0.9,
+  lin_d1 = y11 + y12 ~ x1_0.1 + x1_0.2 + x1_0.3 + x1_0.4 + x1_0.5 + x1_0.6 +
+    x1_0.7 + x1_0.8 + x1_0.9 + x2_0.1 + x2_0.2 + x2_0.3 + x2_0.4 +
+    x2_0.5 + x2_0.6 + x2_0.7 + x2_0.8 + x2_0.9,
+  bin_d1 = y21 + y22 ~ x1_0.1 + x1_0.2 + x1_0.3 + x1_0.4 + x1_0.5 + x1_0.6 +
+    x1_0.7 + x1_0.8 + x1_0.9 + x2_0.1 + x2_0.2 + x2_0.3 + x2_0.4 +
+    x2_0.5 + x2_0.6 + x2_0.7 + x2_0.8 + x2_0.9,
+  lin_d2 = y11 + y12 ~ x1 + x2 + x1_0.1 + x1_0.2 + x1_0.3 + x1_0.4 + x1_0.5 + x1_0.6 +
+    x1_0.7 + x1_0.8 + x1_0.9 + x2_0.1 + x2_0.2 + x2_0.3 + x2_0.4 +
+    x2_0.5 + x2_0.6 + x2_0.7 + x2_0.8 + x2_0.9,
+  bin_d2 = y21 + y22 ~ x1 + x2 + x1_0.1 + x1_0.2 + x1_0.3 + x1_0.4 + x1_0.5 + x1_0.6 +
+    x1_0.7 + x1_0.8 + x1_0.9 + x2_0.1 + x2_0.2 + x2_0.3 + x2_0.4 +
+    x2_0.5 + x2_0.6 + x2_0.7 + x2_0.8 + x2_0.9
 )
 
-# Binary outcome with nonlinear rank-based pattern
-y24 <- rbinom(
-  N, 1,
-  plogis(-0.5 + 0.5 * x1 + 1.2 * sin(2 * pi * Fx2) + alp)
+configs <- list(
+  list(basis = "main",           ipw = "ipw",    lin = "lin",    bin = "bin"),
+  list(basis = "quartiles",      ipw = "ipw_q1", lin = "lin_q1", bin = "bin_q1"),
+  list(basis = "main+quartiles", ipw = "ipw_q2", lin = "lin_q2", bin = "bin_q2"),
+  list(basis = "deciles",        ipw = "ipw_d1", lin = "lin_d1", bin = "bin_d1"),
+  list(basis = "main+deciles",   ipw = "ipw_d2", lin = "lin_d2", bin = "bin_d2")
 )
 
+a <- Sys.time()
+cl <- makeCluster(cores)
+registerDoSNOW(cl)
+pb <- progress_bar$new(format = "[:bar] :percent [Elapsed: :elapsedfull || Remaining: :eta]",
+                       total = sims)
+opts <- list(progress = \(n) pb$tick())
 
-# ------------------------------------------------------------
-# 3. NEW SELECTION MECHANISMS FAVORING QUANTILE METHODS
-# Added because quantile balancing should help particularly
-# when selection depends on tail membership / threshold regions.
-#
-# IMPORTANT:
-# These are designed to preserve overlap, not destroy it.
-# Probabilities remain strictly between 0 and 1.
-# ------------------------------------------------------------
+results_simulation <- foreach(k = 1:sims,
+                              .combine = rbind,
+                              .packages = c("survey", "nonprobsvy", "data.table"),
+                              .options.snow = opts,
+                              .errorhandling = "remove"
+) %dorng% {
 
-# p3: tail-based / threshold-based nonprobability mechanism
-# overrepresents high x2 and underrepresents low x1
-p3 <- plogis(-2 + 2.5 * x2_high80 + 1.5 * x1_low20)
+  sample_prob <- pop_data[sample(1:N, n), ]
+  sample_bd1  <- pop_data[rbinom(N, 1, pop_data$p1) == 1, ]
+  sample_bd2  <- pop_data[rbinom(N, 1, pop_data$p2) == 1, ]
 
-# p4: "missing middle" mechanism
-# underrepresents the middle of x2, which is hard for moment-based
-# adjustment to detect if mean/variance are similar
-p4 <- plogis(1.5 - 3.0 * x2_mid40_60)
+  sample_prob_svy <- svydesign(ids = ~1, weights = ~w, data = sample_prob)
+  q1_est <- svyquantile(formulas$ipw, sample_prob_svy, p_quantiles1)
+  q2_est <- svyquantile(formulas$ipw, sample_prob_svy, p_quantiles2)
 
-# p5: rank-sensitive smooth-but-local mechanism based on decile regions
-# stronger selection in upper x2 deciles, but not extreme enough
-# to cause zero-overlap problems
-x2_gt_70 <- as.numeric(x2 > quantile(x2, 0.70))
-x2_gt_90 <- as.numeric(x2 > quantile(x2, 0.90))
-p5 <- plogis(-1.5 + 1.2 * x2_gt_70 + 1.0 * x2_gt_90 + 0.5 * x1)
+  aug_data <- function(dat) {
+    b1 <- make_quantile_basis(dat, q1_est)
+    b2 <- make_quantile_basis(dat, q2_est)
+    cbind(dat, b1$cumulative, b2$cumulative)
+  }
 
-# p6: weak-overlap stress test with bounded probabilities
-# This is useful for studying instability without complete positivity failure.
-eta6 <- -2.5 + 2.0 * x2_high80 - 1.5 * x2_low20 + 0.3 * x1
-eps_overlap <- 0.02
-p6 <- eps_overlap + (1 - 2 * eps_overlap) * plogis(eta6)
+  sample_prob_aug <- aug_data(sample_prob)
+  sample_bd1_aug  <- aug_data(sample_bd1)
+  sample_bd2_aug  <- aug_data(sample_bd2)
 
+  sample_prob_aug_svy <- svydesign(ids = ~1, weights = ~w, data = sample_prob_aug)
 
-# ------------------------------------------------------------
-# 4. OPTIONAL MULTIMODAL VERSION OF X FOR EXTRA SCENARIOS
-# Added because quantile methods can help more when moments
-# do not describe the covariate distribution well.
-#
-# This does NOT replace the baseline x1, x2.
-# It gives an alternative DGP for robustness experiments.
-# ------------------------------------------------------------
+  datasets <- list(bd1 = sample_bd1_aug, bd2 = sample_bd2_aug)
+  results_list <- list()
 
-# Example alternative x1 with two modes
-x1_mix <- ifelse(
-  rbinom(N, 1, 0.5) == 1,
-  rnorm(N, -1, 0.4),
-  rnorm(N,  2, 0.6)
-)
+  for (cfg in configs) {
+    for (ds_name in names(datasets)) {
+      ds <- datasets[[ds_name]]
 
-# Example alternative x2 with mixture-exponential behavior
-z_mix <- rbinom(N, 1, 0.7)
-x2_mix <- ifelse(z_mix == 1, rexp(N, rate = 1.0), rexp(N, rate = 0.2))
+      ## IPW
+      res <- tryCatch({
+        m <- nonprob(selection = formulas[[cfg$ipw]], target = formulas$y,
+                     data = ds, svydesign = sample_prob_aug_svy,
+                     control_selection = control_ipw)
+        r <- extract(m)
+        r$estimator <- "ipw"
+        r$dataset   <- ds_name
+        r$basis     <- cfg$basis
+        r$k         <- k
+        r
+      }, error = function(e) NULL)
+      results_list <- c(results_list, list(res))
 
-# Quantiles for multimodal / mixture scenario
-qx1_mix_20_80 <- quantile(x1_mix, probs = c(0.20, 0.80))
-qx2_mix_20_80 <- quantile(x2_mix, probs = c(0.20, 0.80))
+      ## MI linear
+      res <- tryCatch({
+        m <- nonprob(outcome = formulas[[cfg$lin]],
+                     data = ds, svydesign = sample_prob_aug_svy)
+        r <- extract(m)
+        r$estimator <- "mi"
+        r$dataset   <- ds_name
+        r$basis     <- cfg$basis
+        r$k         <- k
+        r
+      }, error = function(e) NULL)
+      results_list <- c(results_list, list(res))
 
-# Example threshold indicators in mixture scenario
-x1_mix_low20  <- as.numeric(x1_mix <= qx1_mix_20_80[1])
-x2_mix_high80 <- as.numeric(x2_mix >  qx2_mix_20_80[2])
+      ## MI binomial
+      res <- tryCatch({
+        m <- nonprob(outcome = formulas[[cfg$bin]], family = "binomial",
+                     data = ds, svydesign = sample_prob_aug_svy)
+        r <- extract(m)
+        r$estimator <- "mi"
+        r$dataset   <- ds_name
+        r$basis     <- cfg$basis
+        r$k         <- k
+        r
+      }, error = function(e) NULL)
+      results_list <- c(results_list, list(res))
 
-# Example additional outcome and selection under mixture covariates
-y15_mix <- 1 + 0.5 * x1_mix + x2_mix + 2.0 * x2_mix_high80 - 1.0 * x1_mix_low20 +
-  rnorm(N) + rnorm(N)
+      ## DR linear
+      res <- tryCatch({
+        m <- nonprob(selection = formulas[[cfg$ipw]],
+                     outcome = formulas[[cfg$lin]],
+                     data = ds, svydesign = sample_prob_aug_svy,
+                     control_selection = control_ipw)
+        r <- extract(m)
+        r$estimator <- "dr"
+        r$dataset   <- ds_name
+        r$basis     <- cfg$basis
+        r$k         <- k
+        r
+      }, error = function(e) NULL)
+      results_list <- c(results_list, list(res))
 
-p7_mix <- plogis(-2 + 2.0 * x2_mix_high80 + 1.5 * x1_mix_low20)
+      ## DR binomial
+      res <- tryCatch({
+        m <- nonprob(selection = formulas[[cfg$ipw]],
+                     outcome = formulas[[cfg$bin]], family = "binomial",
+                     data = ds, svydesign = sample_prob_aug_svy,
+                     control_selection = control_ipw)
+        r <- extract(m)
+        r$estimator <- "dr"
+        r$dataset   <- ds_name
+        r$basis     <- cfg$basis
+        r$k         <- k
+        r
+      }, error = function(e) NULL)
+      results_list <- c(results_list, list(res))
+    }
+  }
 
-
-# ------------------------------------------------------------
-# 5. BIN COUNT DIAGNOSTICS FOR OVERLAP
-# Added because quantile methods require that the
-# nonprobability sample has at least some support in each
-# population quantile region.
-#
-# These diagnostics should be computed after drawing the
-# nonprobability sample B under each p_k.
-# ------------------------------------------------------------
-
-# Example helper function:
-check_bin_counts <- function(x, probs, s_B) {
-  # x   : population covariate
-  # probs : quantile probabilities defining bins
-  # s_B : logical or 0/1 indicator of membership in B-sample
-  qs <- quantile(x, probs = probs)
-  brks <- c(-Inf, qs, Inf)
-  tab <- table(cut(x[s_B == 1], breaks = brks, include.lowest = TRUE))
-  return(tab)
+  rbindlist(Filter(Negate(is.null), results_list))
 }
+stopCluster(cl)
+print(Sys.time() - a)
 
-# Example of usage after drawing a B-sample:
-# s_B3 <- rbinom(N, 1, p3)
-# check_bin_counts(x2, probs = seq(0.1, 0.9, 0.1), s_B = s_B3)
+saveRDS(results_simulation, "results/sim-results-2.rds")
 
-# If some bins are empty or nearly empty, use fewer quantiles
-# or collapse adjacent bins.
-
-
-# ------------------------------------------------------------
-# 6. FINAL DATA FRAME
-# Added all new variables while retaining original ones
-# ------------------------------------------------------------
-
-pop_data <- data.frame(
-  x1, x2,
-  y11, y12, y13, y14,
-  y21, y22, y23, y24,
-  p1, p2, p3, p4, p5, p6,
-  Fx2,
-  x1_low20, x1_high80, x2_low20, x2_high80, x2_mid40_60,
-  w = N / n
-)
-
-# Optional alternative population for multimodal sensitivity analysis
-pop_data_mix <- data.frame(
-  x1 = x1_mix,
-  x2 = x2_mix,
-  y15 = y15_mix,
-  p7 = p7_mix,
-  w = N / n
-)
+## ---- multimodal mixture scenario (for future use) ----
+# x1_mix <- ifelse(rbinom(N, 1, 0.5) == 1, rnorm(N, -1, 0.4), rnorm(N, 2, 0.6))
+# z_mix <- rbinom(N, 1, 0.7)
+# x2_mix <- ifelse(z_mix == 1, rexp(N, rate = 1.0), rexp(N, rate = 0.2))
+# qx1_mix_20_80 <- quantile(x1_mix, probs = c(0.20, 0.80))
+# qx2_mix_20_80 <- quantile(x2_mix, probs = c(0.20, 0.80))
+# x1_mix_low20  <- as.numeric(x1_mix <= qx1_mix_20_80[1])
+# x2_mix_high80 <- as.numeric(x2_mix >  qx2_mix_20_80[2])
+# y15_mix <- 1 + 0.5 * x1_mix + x2_mix + 2.0 * x2_mix_high80 - 1.0 * x1_mix_low20 + rnorm(N) + rnorm(N)
+# p7_mix <- plogis(-2 + 2.0 * x2_mix_high80 + 1.5 * x1_mix_low20)

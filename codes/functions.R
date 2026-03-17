@@ -37,4 +37,9 @@ make_quantile_basis <- function(data, ...) {
   )
 }
 
-
+check_bin_counts <- function(x, probs, s_B) {
+  qs <- quantile(x, probs = probs)
+  brks <- c(-Inf, qs, Inf)
+  tab <- table(cut(x[s_B == 1], breaks = brks, include.lowest = TRUE))
+  return(tab)
+}
