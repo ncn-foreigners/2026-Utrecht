@@ -16,3 +16,6 @@ renv/staging/
 results/figures/
 codes/reporting.html
 codes/reporting_files/
+
+# slides
+slides/

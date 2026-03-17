@@ -32,7 +32,7 @@ results[, covered := as.numeric(lower_bound <= true_mean & true_mean <= upper_bo
 ## summary statistics
 summary_dt <- results[, .(
   mean_bias = mean(bias),
-  rmse = sqrt(mean(bias^2 + var(mean))),
+  rmse = sqrt(mean(bias^2 + SE^2)),
   coverage = mean(covered)
 ), by = .(target, estimator, dataset, basis)]
 
@@ -43,7 +43,8 @@ summary_bin  <- summary_dt[target %in% c("y21", "y22")]
 
 ## shared theme and palette
 theme_sim <- theme_bw() +
-  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+  theme(axis.text.x = element_text(angle = 45, hjust = 1),
+        text = element_text(size = 15))
 palette_sim <- scale_fill_brewer(palette = "Set2")
 
 ## figures directory
@@ -55,27 +56,85 @@ dir.create("../results/figures", showWarnings = FALSE, recursive = TRUE)
 ### Continuous outcomes (y11, y12)
 
 ```{r bias-cont, fig.width=10, fig.height=6}
-p <- ggplot(results_cont, aes(x = basis, y = bias, fill = estimator)) +
+results_cont |> 
+  subset(dataset == "bd2" & target %in% c("y11", "y12")) |> 
+  transform(dataset = "BD2 (non-linear selection)",
+            target = factor(target,
+                            c("y11", "y12"),
+                            c("y11 (linear)", "y12 (non-linear)"))) |>
+  ggplot(data = _, aes(x = basis, y = bias, fill = estimator)) +
   geom_boxplot(outlier.size = 0.5) +
   geom_hline(yintercept = 0, linetype = "dashed") +
   facet_grid(dataset ~ target, scales = "free_y") +
-  theme_sim + palette_sim +
-  labs(x = "Basis", y = "Bias", fill = "Estimator")
+  theme_sim + 
+  palette_sim +
+  labs(x = "Basis", y = "Bias", fill = "Estimator") -> p
+
 p
 ggsave("../results/figures/bias-cont.png", p, width = 10, height = 6, dpi = 300)
+```
+
+```{r se-cont, fig.width=10, fig.height=6}
+results_cont |> 
+  subset(dataset == "bd2" & target %in% c("y11", "y12")) |> 
+  transform(dataset = "BD2 (non-linear selection)",
+            target = factor(target,
+                            c("y11", "y12"),
+                            c("y11 (linear)", "y12 (non-linear)"))) |>
+  ggplot(data = _, aes(x = basis, y = SE, fill = estimator)) +
+  geom_boxplot(outlier.size = 0.5) +
+  geom_hline(yintercept = 0, linetype = "dashed") +
+  facet_grid(dataset ~ target, scales = "free_y") +
+  scale_y_continuous(limits = c(0, 2)) + 
+  #scale_y_log10() +
+  theme_sim + 
+  palette_sim +
+  labs(x = "Basis", y = "SE (truncated to [0,2])", fill = "Estimator") -> p
+
+p
+ggsave("../results/figures/se-cont.png", p, width = 10, height = 6, dpi = 300)
 ```
 
 ### Binary outcomes (y21, y22)
 
 ```{r bias-bin, fig.width=10, fig.height=6}
-p <- ggplot(results_bin, aes(x = basis, y = bias, fill = estimator)) +
+results_bin |> 
+  subset(dataset == "bd2" & target %in% c("y21", "y22")) |>
+  transform(dataset = "BD2 (non-linear selection)",
+            target = factor(target,
+                            c("y21", "y22"),
+                            c("y21 (linear)", "y22 (non-linear)"))) |>
+  ggplot(data=_, aes(x = basis, y = bias, fill = estimator)) +
   geom_boxplot(outlier.size = 0.5) +
   geom_hline(yintercept = 0, linetype = "dashed") +
   facet_grid(dataset ~ target, scales = "free_y") +
-  theme_sim + palette_sim +
-  labs(x = "Basis", y = "Bias", fill = "Estimator")
+  theme_sim + 
+  palette_sim +
+  labs(x = "Basis", y = "Bias", fill = "Estimator") -> p
+
 p
 ggsave("../results/figures/bias-bin.png", p, width = 10, height = 6, dpi = 300)
+```
+
+```{r se-bin, fig.width=10, fig.height=6}
+results_bin |> 
+  subset(dataset == "bd2" & target %in% c("y21", "y22")) |>
+  transform(dataset = "BD2 (non-linear selection)",
+            target = factor(target,
+                            c("y21", "y22"),
+                            c("y21 (linear)", "y22 (non-linear)"))) |>
+  ggplot(data = _, aes(x = basis, y = SE, fill = estimator)) +
+  geom_boxplot(outlier.size = 0.5) +
+  geom_hline(yintercept = 0, linetype = "dashed") +
+  facet_grid(dataset ~ target, scales = "free_y") +
+  scale_y_continuous(limits = c(0, 0.1)) + 
+  #scale_y_log10() +
+  theme_sim + 
+  palette_sim +
+  labs(x = "Basis", y = "SE (truncated to [0, 0.1])", fill = "Estimator") -> p
+
+p
+ggsave("../results/figures/se-bin.png", p, width = 10, height = 6, dpi = 300)
 ```
 
 ## RMSE
@@ -109,12 +168,18 @@ ggsave("../results/figures/rmse-bin.png", p, width = 10, height = 6, dpi = 300)
 ### Continuous outcomes (y11, y12)
 
 ```{r coverage-cont, fig.width=10, fig.height=6}
-p <- ggplot(summary_cont, aes(x = basis, y = coverage, fill = estimator)) +
+summary_cont |> 
+  subset(dataset == "bd2" & target %in% c("y11", "y12")) |> 
+  transform(dataset = "BD2 (non-linear selection)",
+            target = factor(target,
+                            c("y11", "y12"),
+                            c("y11 (linear)", "y12 (non-linear)"))) |>
+  ggplot(data = _, aes(x = basis, y = coverage, fill = estimator)) +
   geom_col(position = position_dodge()) +
   geom_hline(yintercept = 0.95, linetype = "dashed") +
   facet_grid(dataset ~ target) +
   theme_sim + palette_sim +
-  labs(x = "Basis", y = "Coverage", fill = "Estimator")
+  labs(x = "Basis", y = "Coverage", fill = "Estimator") -> p
 p
 ggsave("../results/figures/coverage-cont.png", p, width = 10, height = 6, dpi = 300)
 ```
@@ -122,12 +187,18 @@ ggsave("../results/figures/coverage-cont.png", p, width = 10, height = 6, dpi = 
 ### Binary outcomes (y21, y22)
 
 ```{r coverage-bin, fig.width=10, fig.height=6}
-p <- ggplot(summary_bin, aes(x = basis, y = coverage, fill = estimator)) +
+summary_bin |> 
+  subset(dataset == "bd2" & target %in% c("y21", "y22")) |> 
+  transform(dataset = "BD2 (non-linear selection)",
+            target = factor(target,
+                            c("y21", "y22"),
+                            c("y21 (linear)", "y22 (non-linear)"))) |>
+  ggplot(data = _, aes(x = basis, y = coverage, fill = estimator)) +
   geom_col(position = position_dodge()) +
   geom_hline(yintercept = 0.95, linetype = "dashed") +
   facet_grid(dataset ~ target) +
   theme_sim + palette_sim +
-  labs(x = "Basis", y = "Coverage", fill = "Estimator")
+  labs(x = "Basis", y = "Coverage", fill = "Estimator") -> p
 p
 ggsave("../results/figures/coverage-bin.png", p, width = 10, height = 6, dpi = 300)
 ```
