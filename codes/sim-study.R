@@ -11,6 +11,8 @@ source("codes/functions.R")
 sims <- 1000
 cores <- 8
 
+# We study when quantile balancing is particularly advantageous: under skewed or multimodal auxiliaries, thresholded outcomes, and tail-driven self-selection.
+
 set.seed(2026)
 N <- 20000
 n <- 1000
