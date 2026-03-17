@@ -8,7 +8,7 @@ library(doRNG)
 
 source("codes/functions.R")
 
-sims <- 500
+sims <- 100
 cores <- 8
 
 set.seed(2026)
@@ -21,25 +21,36 @@ epsilon <- rnorm(N)
 p_quantiles1 <- seq(0.25, 0.75, 0.25)
 p_quantiles2 <- seq(0.10, 0.90, 0.10)
 
-## helper variables for threshold/rank effects
-qx1_20_80 <- quantile(x1, probs = c(0.20, 0.80))
-qx2_20_80 <- quantile(x2, probs = c(0.20, 0.80))
-x1_low20    <- as.numeric(x1 <= qx1_20_80[1])
-x1_high80   <- as.numeric(x1 >  qx1_20_80[2])
-x2_low20    <- as.numeric(x2 <= qx2_20_80[1])
-x2_high80   <- as.numeric(x2 >  qx2_20_80[2])
-x2_mid40_60 <- as.numeric(x2 > quantile(x2, 0.40) & x2 <= quantile(x2, 0.60))
-Fx2 <- rank(x2, ties.method = "average") / N
+## population quantile cutpoints
+q25 <- quantile(x2, 0.25)
+q50 <- quantile(x2, 0.50)
+q75 <- quantile(x2, 0.75)
+q33 <- quantile(x2, 0.33)
+q66 <- quantile(x2, 0.66)
 
-## outcomes — threshold and rank-based
-y11 <- 1 + 0.5 * x1 + x2 + 2.0 * x2_high80 - 1.0 * x1_low20 + alp + epsilon
-y12 <- 1 + 0.5 * x1 + sin(2 * pi * Fx2) + alp + epsilon
-y21 <- rbinom(N, 1, plogis(-1 + 0.5 * x1 + 0.5 * x2 + 2.0 * x2_high80 - 1.0 * x1_low20 + alp))
-y22 <- rbinom(N, 1, plogis(-0.5 + 0.5 * x1 + 1.2 * sin(2 * pi * Fx2) + alp))
+## non-monotone outcomes — piecewise in x2 quantile regions
+## y11: U-shaped step function (analogue: healthcare expenditure vs income)
+region4 <- findInterval(x2, c(q25, q50, q75)) + 1
+mu <- c(4, 1, 1, 5)[region4]
+y11 <- mu + 0.3 * x1 + alp + epsilon
 
-## selection mechanisms
-p1 <- plogis(-2 + 2.5 * x2_high80 + 1.5 * x1_low20)
-p2 <- plogis(1.5 - 3.0 * x2_mid40_60)
+## y12: region-dependent slopes (analogue: returns to experience by education level)
+slope <- ifelse(x2 <= q33, -1.5, ifelse(x2 <= q66, 0, 2.5))
+y12 <- 1 + slope * x1 + alp + epsilon
+
+## y21: U-shaped binary (analogue: benefit receipt vs age)
+y21 <- rbinom(N, 1, plogis(-1 + 2 * (x2 <= q25) + 2 * (x2 > q75) + 0.3 * x1 + alp))
+
+## y22: sign-switching binary (analogue: treatment effect reversal by baseline health)
+eta22 <- ifelse(x2 <= q50, -1 + x1 + alp, 1 - x1 + alp)
+y22 <- rbinom(N, 1, plogis(eta22))
+
+## non-monotone selection mechanisms
+mid <- as.numeric((x2 > q25) & (x2 <= q75))
+## p1: oversamples middle (analogue: admin data missing tails)
+p1 <- plogis(-1.5 + 3 * mid)
+## p2: oversamples extremes (analogue: voluntary survey with engaged extremes)
+p2 <- plogis(1 - 3 * mid)
 
 pop_data <- data.frame(x1, x2, y11, y12, y21, y22, p1, p2, w = N / n)
 
