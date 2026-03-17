@@ -8,7 +8,7 @@ library(doRNG)
 
 source("codes/functions.R")
 
-sims <- 100
+sims <- 500
 cores <- 8
 
 set.seed(2026)

@@ -8,7 +8,7 @@ library(doRNG)
 
 source("codes/functions.R")
 
-sims <- 1000
+sims <- 500
 cores <- 8
 
 # We study when quantile balancing is particularly advantageous: under skewed or multimodal auxiliaries, thresholded outcomes, and tail-driven self-selection.
@@ -132,6 +132,7 @@ results_simulation <- foreach(k = 1:sims,
       res <- tryCatch({
         m <- nonprob(selection = formulas[[cfg$ipw]], target = formulas$y,
                      data = ds, svydesign = sample_prob_aug_svy,
+                     pop_size = N,
                      control_selection = control_ipw)
         r <- extract(m)
         r$estimator <- "ipw"
@@ -145,6 +146,7 @@ results_simulation <- foreach(k = 1:sims,
       ## MI linear
       res <- tryCatch({
         m <- nonprob(outcome = formulas[[cfg$lin]],
+                     pop_size = N,
                      data = ds, svydesign = sample_prob_aug_svy)
         r <- extract(m)
         r$estimator <- "mi"
@@ -158,6 +160,7 @@ results_simulation <- foreach(k = 1:sims,
       ## MI binomial
       res <- tryCatch({
         m <- nonprob(outcome = formulas[[cfg$bin]], family = "binomial",
+                     pop_size = N,
                      data = ds, svydesign = sample_prob_aug_svy)
         r <- extract(m)
         r$estimator <- "mi"
@@ -173,6 +176,7 @@ results_simulation <- foreach(k = 1:sims,
         m <- nonprob(selection = formulas[[cfg$ipw]],
                      outcome = formulas[[cfg$lin]],
                      data = ds, svydesign = sample_prob_aug_svy,
+                     pop_size = N,
                      control_selection = control_ipw)
         r <- extract(m)
         r$estimator <- "dr"
@@ -188,6 +192,7 @@ results_simulation <- foreach(k = 1:sims,
         m <- nonprob(selection = formulas[[cfg$ipw]],
                      outcome = formulas[[cfg$bin]], family = "binomial",
                      data = ds, svydesign = sample_prob_aug_svy,
+                     pop_size = N,
                      control_selection = control_ipw)
         r <- extract(m)
         r$estimator <- "dr"
