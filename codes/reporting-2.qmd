@@ -16,7 +16,7 @@ setDT(results)
 
 true_values <- data.table(
   target = c("y11", "y12", "y21", "y22"),
-  true_mean = c(3.048179, 1.353454, 0.55145, 0.4977)
+  true_mean = c(3.048179, 1.353454, 0.55145, 0.54325)
 )
 
 results <- merge(results, true_values, by = "target")

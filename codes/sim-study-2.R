@@ -38,15 +38,16 @@ y11 <- mu + 0.3 * x1 + alp + epsilon
 slope <- ifelse(x2 <= q33, -1.5, ifelse(x2 <= q66, 0, 2.5))
 y12 <- 1 + slope * x1 + alp + epsilon
 
+## middle-region indicator (needed for y22 and selection)
+mid <- as.numeric((x2 > q25) & (x2 <= q75))
+
 ## y21: U-shaped binary (analogue: benefit receipt vs age)
 y21 <- rbinom(N, 1, plogis(-1 + 2 * (x2 <= q25) + 2 * (x2 > q75) + 0.3 * x1 + alp))
 
-## y22: sign-switching binary (analogue: treatment effect reversal by baseline health)
-eta22 <- ifelse(x2 <= q50, -1 + x1 + alp, 1 - x1 + alp)
-y22 <- rbinom(N, 1, plogis(eta22))
+## y22: inverted-U binary (analogue: employment rate vs age — high in middle, low at tails)
+y22 <- rbinom(N, 1, plogis(-1.5 + 3 * mid + 0.3 * x1 + alp))
 
 ## non-monotone selection mechanisms
-mid <- as.numeric((x2 > q25) & (x2 <= q75))
 ## p1: oversamples middle (analogue: admin data missing tails)
 p1 <- plogis(-1.5 + 3 * mid)
 ## p2: oversamples extremes (analogue: voluntary survey with engaged extremes)
