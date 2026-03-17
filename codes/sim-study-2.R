@@ -21,33 +21,26 @@ epsilon <- rnorm(N)
 p_quantiles1 <- seq(0.25, 0.75, 0.25)
 p_quantiles2 <- seq(0.10, 0.90, 0.10)
 
-## population quantile cutpoints
+## population quantile cutpoints and rank-based transform
 q25 <- quantile(x2, 0.25)
-q50 <- quantile(x2, 0.50)
 q75 <- quantile(x2, 0.75)
-q33 <- quantile(x2, 0.33)
-q66 <- quantile(x2, 0.66)
+Fx2 <- rank(x2, ties.method = "average") / N
 
-## non-monotone outcomes — piecewise in x2 quantile regions
-## y11: U-shaped step function (analogue: healthcare expenditure vs income)
-region4 <- findInterval(x2, c(q25, q50, q75)) + 1
-mu <- c(4, 1, 1, 5)[region4]
-y11 <- mu + 0.3 * x1 + alp + epsilon
+## smooth non-monotone outcomes — continuous functions of Fx2
+## y11: smooth U-shape (analogue: healthcare expenditure vs income)
+y11 <- 4 * (2 * Fx2 - 1)^2 + 0.3 * x1 + alp + epsilon
 
-## y12: region-dependent slopes (analogue: returns to experience by education level)
-slope <- ifelse(x2 <= q33, -1.5, ifelse(x2 <= q66, 0, 2.5))
-y12 <- 1 + slope * x1 + alp + epsilon
+## y12: smoothly varying slopes (analogue: returns to experience by education)
+y12 <- 1 + (3 * Fx2 - 1.5) * x1 + alp + epsilon
 
-## middle-region indicator (needed for y22 and selection)
-mid <- as.numeric((x2 > q25) & (x2 <= q75))
+## y21: smooth U-shaped binary (analogue: benefit receipt vs age)
+y21 <- rbinom(N, 1, plogis(-1 + 4 * (2 * Fx2 - 1)^2 + 0.3 * x1 + alp))
 
-## y21: U-shaped binary (analogue: benefit receipt vs age)
-y21 <- rbinom(N, 1, plogis(-1 + 2 * (x2 <= q25) + 2 * (x2 > q75) + 0.3 * x1 + alp))
-
-## y22: inverted-U binary (analogue: employment rate vs age — high in middle, low at tails)
-y22 <- rbinom(N, 1, plogis(-1.5 + 3 * mid + 0.3 * x1 + alp))
+## y22: smooth inverted-U binary (analogue: employment rate vs age)
+y22 <- rbinom(N, 1, plogis(1 - 4 * (2 * Fx2 - 1)^2 + 0.3 * x1 + alp))
 
 ## non-monotone selection mechanisms
+mid <- as.numeric((x2 > q25) & (x2 <= q75))
 ## p1: oversamples middle (analogue: admin data missing tails)
 p1 <- plogis(-1.5 + 3 * mid)
 ## p2: oversamples extremes (analogue: voluntary survey with engaged extremes)

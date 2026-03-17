@@ -1,5 +1,5 @@
 ---
-title: "Simulation study 2 -- non-monotone/piecewise DGP"
+title: "Simulation study 2 -- smooth non-monotone DGP"
 author: "Maciej Beręsewicz"
 format:
   html:
@@ -16,7 +16,7 @@ setDT(results)
 
 true_values <- data.table(
   target = c("y11", "y12", "y21", "y22"),
-  true_mean = c(3.048179, 1.353454, 0.55145, 0.54325)
+  true_mean = c(1.631513, 0.9942853, 0.60145, 0.50175)
 )
 
 results <- merge(results, true_values, by = "target")
