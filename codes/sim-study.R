@@ -8,7 +8,7 @@ library(doRNG)
 
 source("codes/functions.R")
 
-sims <- 100
+sims <- 10
 cores <- 8
 
 # We study when quantile balancing is particularly advantageous: under skewed or multimodal auxiliaries, thresholded outcomes, and tail-driven self-selection.
@@ -35,7 +35,7 @@ control_ipw <- control_sel(est_method = "gee",
                            nleqslv_global = "qline")
 
 boot_setting <- control_inf(var_method = "bootstrap",
-                            num_boot = 50)
+                            num_boot = 25)
 
 formulas <- list(
   ## ys
