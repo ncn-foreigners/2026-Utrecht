@@ -85,7 +85,7 @@ results_cont |>
   geom_boxplot(outlier.size = 0.5) +
   geom_hline(yintercept = 0, linetype = "dashed") +
   facet_grid(dataset ~ target, scales = "free_y") +
-  scale_y_continuous(limits = c(0, 2)) + 
+  #scale_y_continuous(limits = c(0, 2)) + 
   #scale_y_log10() +
   theme_sim + 
   palette_sim +
@@ -127,7 +127,6 @@ results_bin |>
   geom_boxplot(outlier.size = 0.5) +
   geom_hline(yintercept = 0, linetype = "dashed") +
   facet_grid(dataset ~ target, scales = "free_y") +
-  scale_y_continuous(limits = c(0, 0.1)) + 
   #scale_y_log10() +
   theme_sim + 
   palette_sim +

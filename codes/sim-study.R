@@ -8,7 +8,7 @@ library(doRNG)
 
 source("codes/functions.R")
 
-sims <- 500
+sims <- 100
 cores <- 8
 
 # We study when quantile balancing is particularly advantageous: under skewed or multimodal auxiliaries, thresholded outcomes, and tail-driven self-selection.
@@ -33,6 +33,9 @@ p_quantiles2 <- seq(0.10, 0.90, 0.10)
 control_ipw <- control_sel(est_method = "gee", 
                            nleqslv_method = "Newton",
                            nleqslv_global = "qline")
+
+boot_setting <- control_inf(var_method = "bootstrap",
+                            num_boot = 50)
 
 formulas <- list(
   ## ys
@@ -133,6 +136,7 @@ results_simulation <- foreach(k = 1:sims,
         m <- nonprob(selection = formulas[[cfg$ipw]], target = formulas$y,
                      data = ds, svydesign = sample_prob_aug_svy,
                      pop_size = N,
+                     control_inference = boot_setting,
                      control_selection = control_ipw)
         r <- extract(m)
         r$estimator <- "ipw"
@@ -147,6 +151,7 @@ results_simulation <- foreach(k = 1:sims,
       res <- tryCatch({
         m <- nonprob(outcome = formulas[[cfg$lin]],
                      pop_size = N,
+                     control_inference = boot_setting,
                      data = ds, svydesign = sample_prob_aug_svy)
         r <- extract(m)
         r$estimator <- "mi"
@@ -161,6 +166,7 @@ results_simulation <- foreach(k = 1:sims,
       res <- tryCatch({
         m <- nonprob(outcome = formulas[[cfg$bin]], family = "binomial",
                      pop_size = N,
+                     control_inference = boot_setting,
                      data = ds, svydesign = sample_prob_aug_svy)
         r <- extract(m)
         r$estimator <- "mi"
@@ -177,6 +183,7 @@ results_simulation <- foreach(k = 1:sims,
                      outcome = formulas[[cfg$lin]],
                      data = ds, svydesign = sample_prob_aug_svy,
                      pop_size = N,
+                     control_inference = boot_setting,
                      control_selection = control_ipw)
         r <- extract(m)
         r$estimator <- "dr"
@@ -193,6 +200,7 @@ results_simulation <- foreach(k = 1:sims,
                      outcome = formulas[[cfg$bin]], family = "binomial",
                      data = ds, svydesign = sample_prob_aug_svy,
                      pop_size = N,
+                     control_inference = boot_setting,
                      control_selection = control_ipw)
         r <- extract(m)
         r$estimator <- "dr"
