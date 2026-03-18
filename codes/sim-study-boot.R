@@ -1,16 +1,16 @@
 library(survey)
 library(data.table)
 library(nonprobsvy)
-library(doSNOW)
-library(progress)
 library(foreach)
 library(doRNG)
+library(doFuture)
+library(progressr)
 
 source("codes/functions.R")
 
-## NOTE: uses makeForkCluster (Unix/macOS only, do NOT run from RStudio)
+## NOTE: plan(multicore) uses forking — run from terminal, NOT RStudio
 ## For testing set sims/B small; for production use sims = 500, B = 50
-sims  <- 10
+sims  <- 8
 cores <- 8
 B     <- 10
 
@@ -81,6 +81,13 @@ configs <- list(
   list(basis = "main+deciles",   ipw = "ipw_d2", lin = "lin_d2", bin = "bin_d2")
 )
 
+## helper: augment a data.frame with quantile/decile indicator bases
+aug_data <- function(dat, q1, q2) {
+  b1 <- make_quantile_basis(dat, q1)
+  b2 <- make_quantile_basis(dat, q2)
+  cbind(dat, b1$cumulative, b2$cumulative)
+}
+
 ## helper: fit all models for given augmented data
 fit_all <- function(prob_svy, bd1, bd2) {
   results_list <- list()
@@ -150,42 +157,24 @@ fit_all <- function(prob_svy, bd1, bd2) {
   rbindlist(Filter(Negate(is.null), results_list))
 }
 
-## augment a data.frame with quantile/decile indicator bases
-aug_data <- function(dat, q1, q2) {
-  b1 <- make_quantile_basis(dat, q1)
-  b2 <- make_quantile_basis(dat, q2)
-  cbind(dat, b1$cumulative, b2$cumulative)
-}
-
 ## ============================================================================
-## PASS 1: draw samples and estimate quantiles (fast — no model fitting)
+## PASS 1: draw samples and estimate quantiles (sequential — fast, no models)
 ## ============================================================================
 cat("Pass 1: drawing samples...\n")
 a <- Sys.time()
-cl <- parallel::makeForkCluster(cores)
-registerDoSNOW(cl)
-pb1 <- progress_bar$new(
-  format = "Pass 1 [:bar] :percent [Elapsed: :elapsedfull || Remaining: :eta]",
-  total = sims
-)
-opts1 <- list(progress = \(n) pb1$tick())
 
-samples_list <- foreach(
-  k = 1:sims,
-  .options.snow = opts1,
-  .errorhandling = "remove"
-) %dorng% {
-  ## draw samples
+set.seed(2026 + 1)
+samples_list <- vector("list", sims)
+for (k in 1:sims) {
   sample_prob <- pop_data[sample(1:N, n), ]
   sample_bd1  <- pop_data[rbinom(N, 1, pop_data$p1) == 1, ]
   sample_bd2  <- pop_data[rbinom(N, 1, pop_data$p2) == 1, ]
 
-  ## survey design + quantile estimation
   sample_prob_svy <- svydesign(ids = ~1, weights = ~w, data = sample_prob)
   q1_est <- svyquantile(formulas$ipw, sample_prob_svy, p_quantiles1)
   q2_est <- svyquantile(formulas$ipw, sample_prob_svy, p_quantiles2)
 
-  list(
+  samples_list[[k]] <- list(
     sample_prob = sample_prob,
     sample_bd1  = sample_bd1,
     sample_bd2  = sample_bd2,
@@ -193,90 +182,85 @@ samples_list <- foreach(
     q2_est      = q2_est
   )
 }
-
-stopCluster(cl)
-cat(sprintf("Pass 1 done: %d reps in %s\n", length(samples_list),
-            format(Sys.time() - a)))
+cat(sprintf("Pass 1 done in %s\n", format(Sys.time() - a)))
 
 ## ============================================================================
-## PASS 2: fit models — parallel over all (k, b) pairs
-## boot = 0  →  point estimate from original samples
-## boot > 0  →  bootstrap replicate (resample all three samples)
+## PASS 2: fit models — parallel over all (k, b) pairs using future (forking)
+## boot = 0  : point estimate from original samples
+## boot > 0  : bootstrap replicate (resample all three datasets)
 ## ============================================================================
-kb_grid <- expand.grid(k = seq_along(samples_list), b = 0:B)
+kb_grid <- expand.grid(k = seq_len(sims), b = 0:B)
 n_tasks <- nrow(kb_grid)
 
-cat(sprintf("Pass 2: fitting models (%d tasks = %d reps × %d boot)...\n",
-            n_tasks, length(samples_list), B + 1))
+cat(sprintf("Pass 2: fitting models (%d tasks = %d reps x %d boot)...\n",
+            n_tasks, sims, B + 1))
+
+plan(multicore, workers = cores)
+registerDoFuture()
+handlers(global = TRUE)
+handlers("txtprogressbar")
 
 b2 <- Sys.time()
-cl <- parallel::makeForkCluster(cores)
-registerDoSNOW(cl)
-pb2 <- progress_bar$new(
-  format = "Pass 2 [:bar] :percent [Elapsed: :elapsedfull || Remaining: :eta]",
-  total = n_tasks
-)
-opts2 <- list(progress = \(n) pb2$tick())
 
-results_simulation <- foreach(
-  i = 1:n_tasks,
-  .combine = rbind,
-  .options.snow = opts2,
-  .errorhandling = "remove"
-) %dorng% {
-  k_idx <- kb_grid$k[i]
-  b_idx <- kb_grid$b[i]
-  smp   <- samples_list[[k_idx]]
+results_simulation <- with_progress({
+  p <- progressor(steps = n_tasks)
 
-  if (b_idx == 0L) {
-    ## ---- point estimate: use original samples directly ----
-    prob_aug     <- aug_data(smp$sample_prob, smp$q1_est, smp$q2_est)
-    bd1_aug      <- aug_data(smp$sample_bd1,  smp$q1_est, smp$q2_est)
-    bd2_aug      <- aug_data(smp$sample_bd2,  smp$q1_est, smp$q2_est)
-    prob_aug_svy <- svydesign(ids = ~1, weights = ~w, data = prob_aug)
+  foreach(
+    i = 1:n_tasks,
+    .combine = rbind,
+    .errorhandling = "remove"
+  ) %dorng% {
+    k_idx <- kb_grid$k[i]
+    b_idx <- kb_grid$b[i]
+    smp   <- samples_list[[k_idx]]
 
-    res <- fit_all(prob_aug_svy, bd1_aug, bd2_aug)
-    res[, `:=`(k = k_idx, boot = 0L)]
-    res
+    if (b_idx == 0L) {
+      ## ---- point estimate: use original samples directly ----
+      prob_aug     <- aug_data(smp$sample_prob, smp$q1_est, smp$q2_est)
+      bd1_aug      <- aug_data(smp$sample_bd1,  smp$q1_est, smp$q2_est)
+      bd2_aug      <- aug_data(smp$sample_bd2,  smp$q1_est, smp$q2_est)
+      prob_aug_svy <- svydesign(ids = ~1, weights = ~w, data = prob_aug)
 
-  } else {
-    ## ---- bootstrap replicate: resample all three samples ----
-    sp <- smp$sample_prob
-    idx_prob <- sample(1:nrow(sp), nrow(sp), replace = TRUE)
-    sample_prob_boot <- sp[idx_prob, ]
+      res <- fit_all(prob_aug_svy, bd1_aug, bd2_aug)
+      res[, `:=`(k = k_idx, boot = 0L)]
 
-    sb1 <- smp$sample_bd1
-    idx_bd1 <- sample(1:nrow(sb1), nrow(sb1), replace = TRUE)
-    sample_bd1_boot <- sb1[idx_bd1, ]
+    } else {
+      ## ---- bootstrap replicate: resample all three datasets ----
+      sp  <- smp$sample_prob
+      sb1 <- smp$sample_bd1
+      sb2 <- smp$sample_bd2
 
-    sb2 <- smp$sample_bd2
-    idx_bd2 <- sample(1:nrow(sb2), nrow(sb2), replace = TRUE)
-    sample_bd2_boot <- sb2[idx_bd2, ]
+      prob_boot <- sp[sample.int(nrow(sp),   replace = TRUE), ]
+      bd1_boot  <- sb1[sample.int(nrow(sb1), replace = TRUE), ]
+      bd2_boot  <- sb2[sample.int(nrow(sb2), replace = TRUE), ]
 
-    ## re-estimate quantiles from bootstrap probability sample
-    prob_boot_svy <- svydesign(ids = ~1, weights = ~w, data = sample_prob_boot)
-    q1_boot <- tryCatch(svyquantile(formulas$ipw, prob_boot_svy, p_quantiles1),
-                        error = function(e) smp$q1_est)
-    q2_boot <- tryCatch(svyquantile(formulas$ipw, prob_boot_svy, p_quantiles2),
-                        error = function(e) smp$q2_est)
+      ## re-estimate quantiles from bootstrap probability sample
+      prob_boot_svy <- svydesign(ids = ~1, weights = ~w, data = prob_boot)
+      q1_boot <- tryCatch(svyquantile(formulas$ipw, prob_boot_svy, p_quantiles1),
+                          error = function(e) smp$q1_est)
+      q2_boot <- tryCatch(svyquantile(formulas$ipw, prob_boot_svy, p_quantiles2),
+                          error = function(e) smp$q2_est)
 
-    ## rebuild quantile bases from bootstrap quantiles
-    prob_boot_aug     <- aug_data(sample_prob_boot, q1_boot, q2_boot)
-    bd1_boot_aug      <- aug_data(sample_bd1_boot,  q1_boot, q2_boot)
-    bd2_boot_aug      <- aug_data(sample_bd2_boot,  q1_boot, q2_boot)
-    prob_boot_aug_svy <- svydesign(ids = ~1, weights = ~w, data = prob_boot_aug)
+      ## augment bootstrap samples with bootstrap quantile bases
+      prob_boot_aug     <- aug_data(prob_boot, q1_boot, q2_boot)
+      bd1_boot_aug      <- aug_data(bd1_boot,  q1_boot, q2_boot)
+      bd2_boot_aug      <- aug_data(bd2_boot,  q1_boot, q2_boot)
+      prob_boot_aug_svy <- svydesign(ids = ~1, weights = ~w, data = prob_boot_aug)
 
-    res <- tryCatch(
-      fit_all(prob_boot_aug_svy, bd1_boot_aug, bd2_boot_aug),
-      error = function(e) NULL
-    )
-    if (is.null(res)) return(NULL)
-    res[, `:=`(k = k_idx, boot = b_idx)]
+      res <- tryCatch(
+        fit_all(prob_boot_aug_svy, bd1_boot_aug, bd2_boot_aug),
+        error = function(e) NULL
+      )
+      if (is.null(res)) { p(); return(NULL) }
+      res[, `:=`(k = k_idx, boot = b_idx)]
+    }
+
+    p()
     res
   }
-}
+})
 
-stopCluster(cl)
+plan(sequential)
 cat(sprintf("Pass 2 done in %s\n", format(Sys.time() - b2)))
 cat(sprintf("Total time: %s\n", format(Sys.time() - a)))
 
