@@ -135,6 +135,7 @@ p <- ggplot(se_long_cont, aes(x = basis, y = se_value, fill = SE_type)) +
   geom_boxplot(outlier.size = 0.5) +
   facet_grid(estimator ~ target, scales = "free_y") +
   theme_sim +
+  scale_y_continuous(limits = c(0.0, 0.25)) + 
   scale_fill_brewer(palette = "Set1") +
   labs(x = "Basis", y = "Standard error", fill = "SE method")
 

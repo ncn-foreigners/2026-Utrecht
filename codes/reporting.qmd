@@ -6,6 +6,7 @@ format:
     embed-resources: true
 ---
 
+Q: are there any other patters where IPW is better than MI?
 
 ```{r setup, include=FALSE}
 library(data.table)
@@ -89,7 +90,7 @@ results_cont |>
   #scale_y_log10() +
   theme_sim + 
   palette_sim +
-  labs(x = "Basis", y = "SE (truncated to [0,2])", fill = "Estimator") -> p
+  labs(x = "Basis", y = "SE", fill = "Estimator") -> p
 
 p
 ggsave("../results/figures/se-cont.png", p, width = 10, height = 6, dpi = 300)
@@ -130,7 +131,7 @@ results_bin |>
   #scale_y_log10() +
   theme_sim + 
   palette_sim +
-  labs(x = "Basis", y = "SE (truncated to [0, 0.1])", fill = "Estimator") -> p
+  labs(x = "Basis", y = "SE", fill = "Estimator") -> p
 
 p
 ggsave("../results/figures/se-bin.png", p, width = 10, height = 6, dpi = 300)

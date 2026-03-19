@@ -10,9 +10,9 @@ source("codes/functions.R")
 
 ## NOTE: plan(multicore) uses forking — run from terminal, NOT RStudio
 ## For testing set sims/B small; for production use sims = 500, B = 50
-sims  <- 8
 cores <- 8
-B     <- 10
+sims  <- cores*10
+B     <- 50
 
 set.seed(2026)
 N <- 20000
